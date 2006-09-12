@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<!ENTITY version "0.1">
+<!ELEMENT session (broadcast+, current+, cursor+, insert+, delete+, viweport+, message+, freeze+, unfreeze+, error+, ack+)>
+<!ELEMENT document (broadcast+, cursor+, insert+, delete+, viweport+, message+, freeze+, unfreeze+, error+, ack+)>
+<!ELEMENT broadcast (EMTPY)>
+	<!ATTLIST broadcast source CDATA #REQUIRED>
+	<!ATTLIST broadcast version CDATA #REQUIRED>
+<!ELEMENT current (EMTPY)>
+	<!ATTLIST current source CDATA #REQUIRED>
+	<!ATTLIST current destination CDATA #REQUIRED>
+<!ELEMENT cursor (EMPTY)>
+	<!ATTLIST cursor source CDATA #REQUIRED>
+	<!ATTLIST cursor position CDATA #REQUIRED>
+<!ELEMENT insert (#CDATA)>
+	<!ATTLIST insert source CDATA #REQUIRED>
+	<!ATTLIST insert string CDATA #REQUIRED>
+	<!ATTLIST insert position CDATA #IMPLIED>
+<!ELEMENT delete (EMPTY)>
+	<!ATTLIST delete source CDATA #REQUIRED>
+	<!ATTLIST delete length CDATA #REQUIRED>
+	<!ATTLIST delete position CDATA #IMPLIED>
+<!ELEMENT viewport (EMPTY)>
+	<!ATTLIST viewport source CDATA #REQUIRED>
+	<!ATTLIST viewport start CDATA #REQUIRED>
+	<!ATTLIST viewport end CDATA #REQUIRED>
+<!ELEMENT message (CDATA)>
+	<!ATTLIST cursor source CDATA #REQUIRED>
+	<!ATTLIST cursor position CDATA #REQUIRED>
+<!ELEMENT freeze (EMPTY)>
+	<!ATTLIST freeze id CDATA #REQUIRED>
+<!ELEMENT unfreeze (EMPTY)>
+	<!ATTLIST unfreeze id CDATA #REQUIRED>
+<!ELEMENT error (EMPTY)>
+	<!ATTLIST error id CDATA #REQUIRED>
+	<!ATTLIST error destination CDATA #REQUIRED>
+	<!ATTLIST error code CDATA #REQUIRED>
+<!ELEMENT ack (EMTPY)>
+	<!ATTLIST ack id CDATA #REQUIRED>
+	<!ATTLIST ack destination CDATA #REQUIRED>

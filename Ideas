@@ -1,0 +1,16 @@
+IDEAS
+==========
+-Make the file load as black and white and then color where each text item came from. Create a button to mark everything as black. 
+-Double Syntax highlighting? Background for user and foreground for the code?
+-Send scroll events and show what is visible to the other users
+-Make the interface tabbed.
+-Save the history of the document.
+ 
+TODO
+==========
+- Display cursors
+- Add mutliple user colors and cursors
+- Spell Check
+- Move to GTK source view
+- Make all the functions work correctly
+- 
