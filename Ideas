@@ -4,13 +4,15 @@ IDEAS
 -Double Syntax highlighting? Background for user and foreground for the code?
 -Send scroll events and show what is visible to the other users
 -Make the interface tabbed.
--Save the history of the document.
  
 TODO
 ==========
-- Display cursors
-- Add mutliple user colors and cursors
+- Add mutliple user cursors
 - Spell Check
 - Move to GTK source view
-- Make all the functions work correctly
-- 
+- Make the password work, present error to user if not op
+- Error on duplicate nicks
+- Add url type for simple "colloborates"
+
+Errors
+If the master has a different version of collaborate than the client. Send an error to the client and disconnect that client.
