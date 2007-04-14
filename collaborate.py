@@ -1,5 +1,15 @@
 import copy
 
+
+import libxml2
+import sys
+import gtk
+import gobject
+import logging
+import threading
+gobject.threads_init()
+
+
 try:
     import gedit
     
@@ -23,7 +33,8 @@ try:
             doc.connect("delete-range", self.delete)
         
         def insert(self, textbuffer, iter, text, length, data=None):
-            print InsertOperation(text, iter.get_offset())
+            s.get_stream().send(Message(to_jid="cobrowsetest@sameplace.cc",body=str(InsertOperation(text, iter.get_offset()))))
+            print "asdf"
         
         def delete(self, textview, start, end, data=None):
             offset = start.get_offset()
