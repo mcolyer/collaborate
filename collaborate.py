@@ -5,9 +5,9 @@ import libxml2
 import sys
 import gtk
 import gobject
-import logging
-import threading
-gobject.threads_init()
+import socket
+
+s.sendall("This is a test")
 
 
 try:
@@ -28,10 +28,16 @@ try:
             d = Document(tab.get_document())
     
     class Document:
+        socket = None
         def __init__(self, doc):
+            self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self.socket.connect("/tmp/gedit-jabber")
             doc.connect("insert-text", self.insert)
             doc.connect("delete-range", self.delete)
-        
+ 
+        def deactivate(self):
+            self.socket.close()
+
         def insert(self, textbuffer, iter, text, length, data=None):
             s.get_stream().send(Message(to_jid="cobrowsetest@sameplace.cc",body=str(InsertOperation(text, iter.get_offset()))))
             print "asdf"
