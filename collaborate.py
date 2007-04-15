@@ -1,14 +1,9 @@
 import copy
-
-
 import libxml2
 import sys
 import gtk
 import gobject
 import socket
-
-s.sendall("This is a test")
-
 
 try:
     import gedit
@@ -32,6 +27,8 @@ try:
         def __init__(self, doc):
             self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             self.socket.connect("/tmp/gedit-jabber")
+            self.socket.sendall("<connect/>\n")
+            self.socket.sendall("<open-channel/>\n")
             doc.connect("insert-text", self.insert)
             doc.connect("delete-range", self.delete)
  
@@ -39,8 +36,7 @@ try:
             self.socket.close()
 
         def insert(self, textbuffer, iter, text, length, data=None):
-            s.get_stream().send(Message(to_jid="cobrowsetest@sameplace.cc",body=str(InsertOperation(text, iter.get_offset()))))
-            print "asdf"
+            self.socket.sendall(str(InsertOperation(text, iter.get_offset()))+"\n")
         
         def delete(self, textview, start, end, data=None):
             offset = start.get_offset()
