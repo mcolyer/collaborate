@@ -4,6 +4,8 @@ import sys
 import gtk
 import gobject
 import socket
+import re
+import select
 
 try:
     import gedit
@@ -27,10 +29,21 @@ try:
         def __init__(self, doc):
             self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             self.socket.connect("/tmp/gedit-jabber")
+            gobject.idle_add(self.handle_socket)
+            
             self.socket.sendall("<connect/>\n")
             self.socket.sendall("<open-channel/>\n")
             doc.connect("insert-text", self.insert)
             doc.connect("delete-range", self.delete)
+        
+        def handle_socket(self):
+            in_list, out_list, err_list = select.select([self.socket], [], [], 0)
+            if len(in_list) > 0:
+                for connection in in_list:
+                    data = connection.recv(2048)
+                    Operation.parse(data)
+
+            return True
  
         def deactivate(self):
             self.socket.close()
@@ -46,6 +59,11 @@ except:
     print "WARNING: No Gedit environment"
 
 class Operation:
+    @staticmethod
+    def parse(string):
+        insert_re = re.compile("Insert\[\"([^\"]+)\",([0-9]+)\]")
+        print insert_re.match(string).groups()
+
     def is_insert(self):
         return False
     

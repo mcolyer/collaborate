@@ -17,6 +17,7 @@ password = u"madack10"
 
 channel = None
 transport = None
+conn = None
 
 events = []
 
@@ -53,17 +54,20 @@ class JabberChannel(MucRoomHandler):
         self.handle_jid = JID("%s/%s" % (channel, handle))
     
     def message_received(self, user, stanza):
+        global conn
         if stanza.get_type() == "groupchat" and stanza.get_from() != self.handle_jid:
             print "IN: "+stanza.get_body()
+            conn.sendall(stanza.get_body())
 
     def send(self, message):
         self.stream.send(Message(to_jid=self.channel_jid, stanza_type="groupchat", body=unicode(message, "utf-8")))
 
     def user_left(self, user, stanza):
-        print "left: "+stanza.get_from().as_utf8()
+        print "LEFT: "+stanza.get_from().as_utf8()
 
     def user_joined(self, user,stanza):
-        print "joined: "+stanza.get_from().as_utf8()
+        if stanza.get_from() != self.handle_jid:
+            print "JOINED: "+stanza.get_from().as_utf8()
 
 def handle_data(data):
     global transport
