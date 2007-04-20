@@ -107,7 +107,7 @@ conn, address = s.accept()
 
 while True:
     # Poll the socket
-    in_list, out_list, err_list = select.select([conn], [], [], 0)
+    in_list, out_list, err_list = select.select([conn], [], [], 0.5)
     if len(in_list) > 0:
         data = in_list[0].recv(2048)
         if len(data) == 0: break

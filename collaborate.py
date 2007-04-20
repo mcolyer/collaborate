@@ -26,27 +26,36 @@ try:
     
     class Document:
         socket = None
+        _geditDocument = None
+
         def __init__(self, doc):
             self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             self.socket.connect("/tmp/gedit-jabber")
             gobject.idle_add(self.handle_socket)
-            
+           
             self.socket.sendall("<connect/>\n")
             self.socket.sendall("<open-channel/>\n")
-            doc.connect("insert-text", self.insert)
-            doc.connect("delete-range", self.delete)
+            self._geditDocument = doc
+            self._geditDocument.connect("insert-text", self.insert)
+            self._geditDocument.connect("delete-range", self.delete)
         
         def handle_socket(self):
-            in_list, out_list, err_list = select.select([self.socket], [], [], 0)
+            in_list, out_list, err_list = select.select([self.socket], [], [], 0.01)
             if len(in_list) > 0:
                 for connection in in_list:
                     data = connection.recv(2048)
-                    Operation.parse(data)
+                    self.execute(Operation.parse(data))
 
             return True
  
         def deactivate(self):
             self.socket.close()
+
+        def execute(self, command):
+            if isinstance(command, InsertOperation):
+                self._geditDocument.insert(self._geditDocument.get_iter_at_offset(command.p), command.s)
+            elif isinstance(command, DeleteOperation):
+                self._geditDocument.delete(self._geditDocument.get_iter_at_offset(command.p), self._geditDocument.get_iter_at_offset(command.p+command.l))
 
         def insert(self, textbuffer, iter, text, length, data=None):
             self.socket.sendall(str(InsertOperation(text, iter.get_offset()))+"\n")
@@ -54,7 +63,7 @@ try:
         def delete(self, textview, start, end, data=None):
             offset = start.get_offset()
             length = end.get_offset() - offset
-            print DeleteOperation(length, offset)
+            self.socket.sendall(str(DeleteOperation(length, offset)))
 except:
     print "WARNING: No Gedit environment"
 
@@ -62,7 +71,16 @@ class Operation:
     @staticmethod
     def parse(string):
         insert_re = re.compile("Insert\[\"([^\"]+)\",([0-9]+)\]")
-        print insert_re.match(string).groups()
+        delete_re = re.compile("Delete\[\"([^\"]+)\",([0-9]+)\]")
+        if insert_re.match(string):
+            text, position = insert_re.match(string).groups()
+            position = int(position)
+            return InsertOperation(text, position)
+        elif delete_re.match(string):
+            length, position = delete_re.match(string).groups()
+            length = int(length)
+            position = int(position)
+            return DeleteOperation(length, position)
 
     def is_insert(self):
         return False
