@@ -3,9 +3,17 @@ import libxml2
 import sys
 import gtk
 import gobject
+import gconf
+import gnomekeyring
+import gtk.glade
 import socket
 import re
 import select
+
+GCONF_KEY_BASE = '/apps/gedit-2/plugins/collaborate'
+GCONF_KEY_JABBER_SERVER = GCONF_KEY_BASE + '/jabber_server'
+
+GLADE_FILE = '/home/mcolyer/.gnome2/gedit/plugins/collaborate.glade'
 
 try:
     import gedit
@@ -23,7 +31,15 @@ try:
         def add(self, window, tab):
             print "opened"
             d = Document(tab.get_document())
-    
+        
+        def is_configurable(self):
+            return true
+        
+        def create_configure_dialog(self):
+            glade_tree = gtk.glade.XML(GLADE_FILE)
+            
+            return glade_tree.get_widget('preferences')
+
     class Document:
         socket = None
         _geditDocument = None
