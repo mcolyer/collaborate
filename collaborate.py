@@ -1,3 +1,10 @@
+"""
+Author: Matthew Colyer <linuxcoder@colyer.org>
+
+Inspiration/copying came from the GNOME live pages about the gedit plugins.
+
+"""
+
 import copy
 import libxml2
 import sys
@@ -9,56 +16,82 @@ import gtk.glade
 import socket
 import re
 import select
+import os.path
 
 GCONF_KEY_BASE = '/apps/gedit-2/plugins/collaborate'
 GCONF_KEY_JABBER_SERVER = GCONF_KEY_BASE + '/jabber_server'
 
-GLADE_FILE = '/home/mcolyer/.gnome2/gedit/plugins/collaborate.glade'
+GLADE_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), 'collaborate.glade'))
+
+SOCKET_PATH = '/tmp/gedit-jabber' 
 
 try:
     import gedit
     
     class CollaboratePlugin(gedit.Plugin):
         def __init__(self):
-            self.glade_tree = gtk.glade.XML(GLADE_FILE)
-            self.keyring = gnomekeyring.get_default_keyring_sync()
-        
+            gedit.Plugin.__init__(self)
+            self._instances = {}
+
         def activate(self, window):
-            window.connect("tab-added", self.add)
-            CollaborateWindowHelper(self, window)
+            self._instances[window] = CollaborateWindowHelper(self, window)
 
         def deactivate(self, window):
-            pass
-        
+            self._instances[window].deactivate()
+            del self._instances[window]
+
+        def update_ui(self, window):
+            self._instances[window].update_ui()
+
         def is_configurable(self):
             return true
         
         def create_configure_dialog(self):
-            dic = {"on_preferences_response" : self.on_preferences_response,
-                   "on_server_unfocus": self.on_server_unfocus}
+            preferences = CollaboratePreferenceWindow()
+            return preferences.window
+
+    class CollaboratePreferenceWindow:
+        def __init__(self):
+            self.glade_tree = gtk.glade.XML(GLADE_FILE)
+            self.keyring = gnomekeyring.get_default_keyring_sync()
+            
+            # Attach the signals
+            dic = {'on_preferences_response' : self.on_preferences_response,
+                   'on_server_unfocus' : self.on_server_unfocus}
             self.glade_tree.signal_autoconnect(dic)
 
-            # Set the server field equal to the stored value
+            # Load the gconf value of the server
             server = gconf.client_get_default().get_string(GCONF_KEY_JABBER_SERVER)
             if server is not None:
                 self.glade_tree.get_widget('server').set_text(server)
 
+            # Access the keyring
             self.retrieve_keyring_data(server)
-                    
-            return self.glade_tree.get_widget('preferences')
+            
+            # Create the gtk Window
+            self.window = self.glade_tree.get_widget('preferences')
 
+        #
+        # Helper functions
+        #
         def retrieve_keyring_data(self, server):
+            # If the server is blank don't bother loading keyring data
             if server != None and server != '':
-                try:
-                    results = gnomekeyring.find_items_sync(gnomekeyring.ITEM_NETWORK_PASSWORD, {'server': server, 'protocol': 'jabber'})
-                except gnomekeyring.DeniedError:
-                    user = ""
-                    password = ""
-                else:
-                    #FIXME: This is hack, we are only allowing one account to a specific server
-                    user = results[0].attributes['user']
-                    password = results[0].secret
+                return
 
+            # Query the keyring
+            try:
+                results = gnomekeyring.find_items_sync(gnomekeyring.ITEM_NETWORK_PASSWORD, {'server': server, 'protocol': 'jabber'})
+            except gnomekeyring.DeniedError:
+                # No results were returned
+                user = ""
+                password = ""
+            else:
+                #FIXME: This is hack, we are only allowing one account to a specific server
+                user = results[0].attributes['user']
+                password = results[0].secret
+        
+            # Update the interface
             self.glade_tree.get_widget('user').set_text(user)
             self.glade_tree.get_widget('password').set_text(password)
 
@@ -86,7 +119,9 @@ try:
                                                   {'server': server, 'user': user, 'authtype': 'password', 'protocol': 'jabber'},
                                                   password,
                                                   True)
-
+        #
+        # Callbacks
+        #
         def on_server_unfocus(self, widget, event, data=None):
             server = self.glade_tree.get_widget('server').get_text()
             orig_server = gconf.client_get_default().get_string(GCONF_KEY_JABBER_SERVER)
@@ -105,77 +140,69 @@ try:
 
             dialog.hide()
 
-        def update_ui(self, window):
-            pass
-        
-        def add(self, window, tab):
-            print "opened"
-            d = Document(tab.get_document())
     
-    # Menu item example, insert a new item in the Tools menu
-    ui_str = """<ui>
-      <menubar name="MenuBar">
-        <menu name="ToolsMenu" action="Tools">
-          <placeholder name="ToolsOps_2">
-            <menuitem name="ExamplePy" action="ExamplePy"/>
-          </placeholder>
-        </menu>
-      </menubar>
-    </ui>
-    """
     class CollaborateWindowHelper:
         def __init__(self, plugin, window):
             self._window = window
             self._plugin = plugin
+            self._documents = []
 
-            # Insert menu items
             self._insert_menu()
-
+            
         def deactivate(self):
-            # Remove any installed menu items
             self._remove_menu()
 
             self._window = None
             self._plugin = None
             self._action_group = None
 
+            for document in documents:
+                document.deactivate()
+
+            del documents
+
         def _insert_menu(self):
-            # Get the GtkUIManager
             manager = self._window.get_ui_manager()
 
             # Create a new action group
-            self._action_group = gtk.ActionGroup("CollaboratePluginActions")
-            self._action_group.add_actions([("ExamplePy", None, "Share document",
-                                             None, "Share the document",
+            self._action_group = gtk.ActionGroup('CollaboratePluginActions')
+            self._action_group.add_actions([('Collaborate', None, 'Share document',
+                                             None, 'Share the document',
                                              self.on_share_document_activate)])
 
-            # Insert the action group
             manager.insert_action_group(self._action_group, -1)
-
+            
             # Merge the UI
+            ui_str = """<ui>
+                  <menubar name="MenuBar">
+                    <menu name="ToolsMenu" action="Tools">
+                      <placeholder name="ToolsOps_2">
+                        <menuitem name="Collaborate" action="Collaborate"/>
+                      </placeholder>
+                    </menu>
+                  </menubar>
+                </ui>
+                """
             self._ui_id = manager.add_ui_from_string(ui_str)
 
         def _remove_menu(self):
-            # Get the GtkUIManager
             manager = self._window.get_ui_manager()
 
-            # Remove the ui
             manager.remove_ui(self._ui_id)
 
-            # Remove the action group
             manager.remove_action_group(self._action_group)
 
-            # Make sure the manager updates
             manager.ensure_update()
 
         def update_ui(self):
             self._action_group.set_sensitive(self._window.get_active_document() != None)
 
-        # Menu activate handlers
         def on_share_document_activate(self, action):
             doc = self._window.get_active_document()
             if not doc:
                 return
+            self._documents.append(Document(doc))
+
 
     class Document:
         socket = None
@@ -183,14 +210,14 @@ try:
 
         def __init__(self, doc):
             self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            self.socket.connect("/tmp/gedit-jabber")
+            self.socket.connect(SOCKET_PATH)
             gobject.idle_add(self.handle_socket)
            
             self.socket.sendall("<connect/>\n")
             self.socket.sendall("<open-channel/>\n")
             self._geditDocument = doc
-            self._geditDocument.connect("insert-text", self.insert)
-            self._geditDocument.connect("delete-range", self.delete)
+            self._geditDocument.connect('insert-text', self.insert)
+            self._geditDocument.connect('delete-range', self.delete)
         
         def handle_socket(self):
             in_list, out_list, err_list = select.select([self.socket], [], [], 0.01)
