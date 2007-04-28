@@ -127,6 +127,7 @@
 		      <property name="has_frame">True</property>
 		      <property name="invisible_char">●</property>
 		      <property name="activates_default">False</property>
+		      <signal name="focus_out_event" handler="on_server_unfocus" last_modification_time="Sat, 28 Apr 2007 20:07:19 GMT"/>
 		    </widget>
 		    <packing>
 		      <property name="left_attach">1</property>

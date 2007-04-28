@@ -21,6 +21,7 @@ try:
     class CollaboratePlugin(gedit.Plugin):
         def __init__(self):
             self.glade_tree = gtk.glade.XML(GLADE_FILE)
+            self.keyring = gnomekeyring.get_default_keyring_sync()
         
         def activate(self, window):
             window.connect("tab-added", self.add)
@@ -32,21 +33,77 @@ try:
             return true
         
         def create_configure_dialog(self):
-            dic = {"on_preferences_response" : self.on_preferences_response}
+            dic = {"on_preferences_response" : self.on_preferences_response,
+                   "on_server_unfocus": self.on_server_unfocus}
             self.glade_tree.signal_autoconnect(dic)
 
             # Set the server field equal to the stored value
             server = gconf.client_get_default().get_string(GCONF_KEY_JABBER_SERVER)
             if server is not None:
                 self.glade_tree.get_widget('server').set_text(server)
+
+            self.retrieve_keyring_data(server)
+                    
             return self.glade_tree.get_widget('preferences')
+
+        def retrieve_keyring_data(self, server):
+            if server != None and server != '':
+                try:
+                    results = gnomekeyring.find_items_sync(gnomekeyring.ITEM_NETWORK_PASSWORD, {'server': server, 'protocol': 'jabber'})
+                except gnomekeyring.DeniedError:
+                    user = ""
+                    password = ""
+                else:
+                    #FIXME: This is hack, we are only allowing one account to a specific server
+                    user = results[0].attributes['user']
+                    password = results[0].secret
+
+            self.glade_tree.get_widget('user').set_text(user)
+            self.glade_tree.get_widget('password').set_text(password)
+
+        def set_keyring_data(self, server, user, password):
+            #FIXME: Should we remove old keyring entries?
+
+            # Check to make sure whether we need to update the keyring entry or not
+            try:
+                results = gnomekeyring.find_items_sync(gnomekeyring.ITEM_NETWORK_PASSWORD, {'server': server, 'user': user, 'protocol': 'jabber'})
+            except gnomekeyring.DeniedError:
+                # The entry doesn't exist
+                gnomekeyring.item_create_sync(self.keyring,
+                                                  gnomekeyring.ITEM_NETWORK_PASSWORD,
+                                                  '',
+                                                  {'server': server, 'user': user, 'authtype': 'password', 'protocol': 'jabber'},
+                                                  password,
+                                                  True)
+            else:
+                #FIXME: This is hack, we are only allowing one account to a specific server
+                # The entry exists, make sure it isn't identical
+                if password != results[0].secret:
+                    gnomekeyring.item_create_sync(self.keyring,
+                                                  gnomekeyring.ITEM_NETWORK_PASSWORD,
+                                                  '',
+                                                  {'server': server, 'user': user, 'authtype': 'password', 'protocol': 'jabber'},
+                                                  password,
+                                                  True)
+
+        def on_server_unfocus(self, widget, event, data=None):
+            server = self.glade_tree.get_widget('server').get_text()
+            orig_server = gconf.client_get_default().get_string(GCONF_KEY_JABBER_SERVER)
+            print "Unfocused"
+            if orig_server != server:
+                self.retrieve_keyring_data(server)
 
         def on_preferences_response(self, dialog, response_id, data=None):
             if response_id == gtk.RESPONSE_OK:
-                server = gconf.client_get_default().set_string(GCONF_KEY_JABBER_SERVER, self.glade_tree.get_widget('server').get_text())
-                dialog.hide()
-            else:
-                dialog.hide()
+                server = self.glade_tree.get_widget('server').get_text()
+                gconf.client_get_default().set_string(GCONF_KEY_JABBER_SERVER, server)
+
+                user = self.glade_tree.get_widget('user').get_text()
+                password = self.glade_tree.get_widget('password').get_text()
+                
+                self.set_keyring_data(server, user, password)
+
+            dialog.hide()
 
         def update_ui(self, window):
             pass
