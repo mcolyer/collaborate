@@ -19,12 +19,35 @@ try:
     import gedit
     
     class CollaboratePlugin(gedit.Plugin):
+        def __init__(self):
+            self.glade_tree = gtk.glade.XML(GLADE_FILE)
+        
         def activate(self, window):
             window.connect("tab-added", self.add)
         
         def deactivate(self, window):
             pass
         
+        def is_configurable(self):
+            return true
+        
+        def create_configure_dialog(self):
+            dic = {"on_preferences_response" : self.on_preferences_response}
+            self.glade_tree.signal_autoconnect(dic)
+
+            # Set the server field equal to the stored value
+            server = gconf.client_get_default().get_string(GCONF_KEY_JABBER_SERVER)
+            if server is not None:
+                self.glade_tree.get_widget('server').set_text(server)
+            return self.glade_tree.get_widget('preferences')
+
+        def on_preferences_response(self, dialog, response_id, data=None):
+            if response_id == gtk.RESPONSE_OK:
+                server = gconf.client_get_default().set_string(GCONF_KEY_JABBER_SERVER, self.glade_tree.get_widget('server').get_text())
+                dialog.hide()
+            else:
+                dialog.hide()
+
         def update_ui(self, window):
             pass
         
@@ -32,14 +55,6 @@ try:
             print "opened"
             d = Document(tab.get_document())
         
-        def is_configurable(self):
-            return true
-        
-        def create_configure_dialog(self):
-            glade_tree = gtk.glade.XML(GLADE_FILE)
-            
-            return glade_tree.get_widget('preferences')
-
     class Document:
         socket = None
         _geditDocument = None
