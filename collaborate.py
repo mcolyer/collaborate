@@ -6,7 +6,6 @@ Inspiration/copying came from the GNOME live pages about the gedit plugins.
 """
 
 import copy
-import libxml2
 import sys
 import gtk
 import gobject
@@ -17,6 +16,10 @@ import socket
 import re
 import select
 import os.path
+import time
+import xml.dom.minidom
+import xml.dom.ext
+import md5
 
 GCONF_KEY_BASE = '/apps/gedit-2/plugins/collaborate'
 GCONF_KEY_JABBER_SERVER = GCONF_KEY_BASE + '/jabber_server'
@@ -24,6 +27,7 @@ GCONF_KEY_JABBER_SERVER = GCONF_KEY_BASE + '/jabber_server'
 GLADE_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), 'collaborate.glade'))
 
 SOCKET_PATH = '/tmp/gedit-jabber' 
+TRANSPORT_COMMAND = os.path.abspath(os.path.join(os.path.dirname(__file__), 'collaborate-transport.py'))
 
 try:
     import gedit
@@ -35,7 +39,7 @@ try:
 
         def activate(self, window):
             self._instances[window] = CollaborateWindowHelper(self, window)
-
+        
         def deactivate(self, window):
             self._instances[window].deactivate()
             del self._instances[window]
@@ -47,29 +51,56 @@ try:
             return true
         
         def create_configure_dialog(self):
-            preferences = CollaboratePreferenceWindow()
+            preferences = CollaboratePreferenceWindow(self)
             return preferences.window
 
+        def get_server(self):
+            return gconf.client_get_default().get_string(GCONF_KEY_JABBER_SERVER)
+
+        def _get_auth(self):
+            server = self.get_server()
+
+            # Query the keyring
+            try:
+                results = gnomekeyring.find_items_sync(gnomekeyring.ITEM_NETWORK_PASSWORD, {'server': server, 'protocol': 'jabber'})
+            except gnomekeyring.DeniedError:
+                # No results were returned
+                self._user = ""
+                self._password = ""
+            else:
+                #FIXME: This is hack, we are only allowing one account to a specific server
+                self._user = results[0].attributes['user']
+                self._password = results[0].secret
+
+        def get_user(self):
+            self._get_auth()
+            return self._user
+
+        def get_password(self):
+            self._get_auth()
+            return self._password
+
     class CollaboratePreferenceWindow:
-        def __init__(self):
-            self.glade_tree = gtk.glade.XML(GLADE_FILE)
-            self.keyring = gnomekeyring.get_default_keyring_sync()
-            
+        def __init__(self, plugin):
+            self._glade_tree = gtk.glade.XML(GLADE_FILE)
+            self._keyring = gnomekeyring.get_default_keyring_sync()
+            self._plugin = plugin
+
             # Attach the signals
             dic = {'on_preferences_response' : self.on_preferences_response,
                    'on_server_unfocus' : self.on_server_unfocus}
-            self.glade_tree.signal_autoconnect(dic)
+            self._glade_tree.signal_autoconnect(dic)
 
             # Load the gconf value of the server
-            server = gconf.client_get_default().get_string(GCONF_KEY_JABBER_SERVER)
+            server = self._plugin.get_server()
             if server is not None:
-                self.glade_tree.get_widget('server').set_text(server)
+                self._glade_tree.get_widget('server').set_text(server)
 
             # Access the keyring
             self.retrieve_keyring_data(server)
             
             # Create the gtk Window
-            self.window = self.glade_tree.get_widget('preferences')
+            self.window = self._glade_tree.get_widget('preferences')
 
         #
         # Helper functions
@@ -92,8 +123,8 @@ try:
                 password = results[0].secret
         
             # Update the interface
-            self.glade_tree.get_widget('user').set_text(user)
-            self.glade_tree.get_widget('password').set_text(password)
+            self._glade_tree.get_widget('user').set_text(user)
+            self._glade_tree.get_widget('password').set_text(password)
 
         def set_keyring_data(self, server, user, password):
             #FIXME: Should we remove old keyring entries?
@@ -103,7 +134,7 @@ try:
                 results = gnomekeyring.find_items_sync(gnomekeyring.ITEM_NETWORK_PASSWORD, {'server': server, 'user': user, 'protocol': 'jabber'})
             except gnomekeyring.DeniedError:
                 # The entry doesn't exist
-                gnomekeyring.item_create_sync(self.keyring,
+                gnomekeyring.item_create_sync(self._keyring,
                                                   gnomekeyring.ITEM_NETWORK_PASSWORD,
                                                   '',
                                                   {'server': server, 'user': user, 'authtype': 'password', 'protocol': 'jabber'},
@@ -113,7 +144,7 @@ try:
                 #FIXME: This is hack, we are only allowing one account to a specific server
                 # The entry exists, make sure it isn't identical
                 if password != results[0].secret:
-                    gnomekeyring.item_create_sync(self.keyring,
+                    gnomekeyring.item_create_sync(self._keyring,
                                                   gnomekeyring.ITEM_NETWORK_PASSWORD,
                                                   '',
                                                   {'server': server, 'user': user, 'authtype': 'password', 'protocol': 'jabber'},
@@ -123,18 +154,18 @@ try:
         # Callbacks
         #
         def on_server_unfocus(self, widget, event, data=None):
-            server = self.glade_tree.get_widget('server').get_text()
+            server = self._glade_tree.get_widget('server').get_text()
             orig_server = gconf.client_get_default().get_string(GCONF_KEY_JABBER_SERVER)
             if orig_server != server:
                 self.retrieve_keyring_data(server)
 
         def on_preferences_response(self, dialog, response_id, data=None):
             if response_id == gtk.RESPONSE_OK:
-                server = self.glade_tree.get_widget('server').get_text()
+                server = self._glade_tree.get_widget('server').get_text()
                 gconf.client_get_default().set_string(GCONF_KEY_JABBER_SERVER, server)
 
-                user = self.glade_tree.get_widget('user').get_text()
-                password = self.glade_tree.get_widget('password').get_text()
+                user = self._glade_tree.get_widget('user').get_text()
+                password = self._glade_tree.get_widget('password').get_text()
                 
                 self.set_keyring_data(server, user, password)
 
@@ -201,25 +232,109 @@ try:
             doc = self._window.get_active_document()
             if not doc:
                 return
-            self._documents.append(Document(doc))
+            self._documents.append(Document(self._plugin, doc))
 
 
     class Document:
-        socket = None
         _geditDocument = None
 
-        def __init__(self, doc):
-            self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            self.socket.connect(SOCKET_PATH)
-            gobject.idle_add(self.handle_socket)
-           
-            self.socket.sendall("<connect/>\n")
-            self.socket.sendall("<open-channel/>\n")
+        def __init__(self, plugin, doc):
+            self._plugin = plugin
+            server = self._plugin.get_server()
+            user = self._plugin.get_user()
+            password = self._plugin.get_password()
+
+            self._transport = Transport.create(server, user, password)
+            self._transport.join("")
             self._geditDocument = doc
             self._geditDocument.connect('insert-text', self.insert)
             self._geditDocument.connect('delete-range', self.delete)
         
+        def deactivate(self):
+            pass
+
+        def execute(self, command):
+            if isinstance(command, InsertOperation):
+                self._geditDocument.insert(self._geditDocument.get_iter_at_offset(command.p), command.s)
+            elif isinstance(command, DeleteOperation):
+                self._geditDocument.delete(self._geditDocument.get_iter_at_offset(command.p), self._geditDocument.get_iter_at_offset(command.p+command.l))
+
+        def insert(self, textbuffer, iter, text, length, data=None):
+            self._transport.send(self.hash(), str(InsertOperation(text, iter.get_offset()))+"\n")
+        
+        def delete(self, textview, start, end, data=None):
+            offset = start.get_offset()
+            length = end.get_offset() - offset
+            self._transport.send(self.hash(), str(DeleteOperation(length, offset)))
+
+        def hash(self):
+            return md5.new(this._geditDocument.get_uri()).digest()
+    
+    class Transport:
+        _transport = None
+        _documents = []
+
+        @staticmethod
+        def create(server, user, password, document):
+            if Transport._transport is None:
+                Transport._transport = Transport(server, user, password)
+            Transport._documents[document.hash()] = document
+
+            return Transport._transport
+
+        def __init__(self, server, user, password):
+            self._transport_stdin, self._transport_stdout = os.popen2(TRANSPORT_COMMAND)
+            
+            time.sleep(0.1)
+            
+            self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self.socket.connect(SOCKET_PATH)
+            
+            gobject.idle_add(self.handle_socket)
+            
+            self._doc = xml.dom.minidom.Document()
+            
+            self.connect(server, user, password)
+            
+            
+        def connect(self, server, user, password):
+            command = self._doc.createElement("connect")
+            command.setAttribute("server", server)
+            command.setAttribute("user", user)
+            command.setAttribute("password", password)
+
+            self.socket.sendall("%s\n" % xml.dom.ext.Print(command))
+
+        def join(self, document_id):
+            command = self._doc.createElement("open-channel")
+            command.setAttribute("document_id", document_id)
+
+            self.socket.sendall("%s\n" % xml.dom.ext.Print(command))
+        
+        def send(self, document_id, message):
+            command = self._doc.createElement("message")
+            message = self._doc.createTextNode(message)
+            #TODO: Nest node with channel info
+            self.socket.sendall(message)
+
+        def leave(self, document_id):
+            command = self._doc.createElement("close-channel")
+            command.setAttribute("document_id", document_id)
+
+            self.socket.sendall("%s\n" % xml.dom.ext.Print(command))
+
+        def disconnect(self):
+            command = self._doc.createElement("disconnect")
+
+            self.socket.sendall("%s\n" % xml.dom.ext.Print(command))
+    
+        def quit(self):
+            command = self._doc.createElement("quit")
+
+            self.socket.sendall("%s\n" % xml.dom.ext.Print(command))
+
         def handle_socket(self):
+            #TODO: Need to reverse map the list of documents to a specific document
             in_list, out_list, err_list = select.select([self.socket], [], [], 0.01)
             if len(in_list) > 0:
                 for connection in in_list:
@@ -229,21 +344,11 @@ try:
             return True
  
         def deactivate(self):
+            self.quit()
+            self._transport_stdin.close()
+            self._transport_stdout.close()
             self.socket.close()
-
-        def execute(self, command):
-            if isinstance(command, InsertOperation):
-                self._geditDocument.insert(self._geditDocument.get_iter_at_offset(command.p), command.s)
-            elif isinstance(command, DeleteOperation):
-                self._geditDocument.delete(self._geditDocument.get_iter_at_offset(command.p), self._geditDocument.get_iter_at_offset(command.p+command.l))
-
-        def insert(self, textbuffer, iter, text, length, data=None):
-            self.socket.sendall(str(InsertOperation(text, iter.get_offset()))+"\n")
-        
-        def delete(self, textview, start, end, data=None):
-            offset = start.get_offset()
-            length = end.get_offset() - offset
-            self.socket.sendall(str(DeleteOperation(length, offset)))
+ 
 except:
     print "WARNING: No Gedit environment"
 
