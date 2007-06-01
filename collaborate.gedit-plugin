@@ -1,0 +1,9 @@
+[Gedit Plugin]
+Loader=python
+Module=collaborate
+IAge=2
+Name=Collaborate
+Description=A collaborative editing plugin
+Authors=Matt Colyer
+Copyright=Copyright © 2007 Matt Colyer <linuxcoder@colyer.org>
+Website=http://www.dark-fusion.com/
